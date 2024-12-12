@@ -1,9 +1,9 @@
+numpy === 1.23.5
 torch
 torchvision
 Cython
 matplotlib
 tqdm
-numpy
 scipy
 PyYAML
 tensorboardX

@@ -25,8 +25,8 @@ from torch.utils.tensorboard import SummaryWriter
 from utils_sr.hparams import hparams, set_hparams
 from utils_sr.utils import plot_img, move_to_cuda, load_checkpoint, save_checkpoint, tensors_to_scalars, Measure, \
     get_all_ckpts
-from tools.caculate_iqa import eval_img_IQA
-
+# from tools.caculate_iqa import eval_img_IQA
+from samtools.caculate_iqa import eval_img_IQA
 
 class Trainer:
     def __init__(self):

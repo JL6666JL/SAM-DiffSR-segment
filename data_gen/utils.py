@@ -66,10 +66,13 @@ def worker_sam(args):
     h, w, c = img.shape
     img_lr = imresize(img, 1 / sr_scale)
     
-    try:
-        sam_mask = np.load(sam_path)
-    except:
-        sam_mask = np.zeros(img.shape[:2])
+    # 这里就不应该try，要是sam_path错了也发现不了
+    # try:
+    #     sam_mask = np.load(sam_path)
+    # except:
+    #     sam_mask = np.zeros(img.shape[:2])
+
+    sam_mask = np.load(sam_path)
     
     if sam_mask.shape != img.shape[:2]:
         sam_mask = cv2.resize(sam_mask, dsize=img.shape[:2][::-1])

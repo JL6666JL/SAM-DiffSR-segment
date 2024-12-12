@@ -1,2 +1,4 @@
 exp/*
 weights/*
+preset/*
+__pycache__/*
