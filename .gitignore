@@ -2,5 +2,4 @@ exp/*
 weights/*
 preset/*
 __pycache__/*
-segment-anything/
-Mask2Former/
+segment-anything/weights/
