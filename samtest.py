@@ -22,7 +22,6 @@ add_maskformer2_config(cfg_seg)
 cfg_seg.merge_from_file("./preset/models/mask2former/config/ade20k-maskformer2_swin_large_IN21k_384_bs16_160k_res640.yaml")
 cfg_seg.MODEL.WEIGHTS = "./preset/models/mask2former/model_final_6b4a3a.pkl"
 cfg_seg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON = True
-
 seg_model = Trainer.build_model(cfg_seg)
 DetectionCheckpointer(seg_model).load(cfg_seg.MODEL.WEIGHTS)
 seg_model.eval().to('cuda:0')
@@ -78,15 +77,14 @@ for i, mask in enumerate(selected_masks):
     if x1 < x2 and y1 < y2 and (x2 - x1) > 0 and (y2 - y1) > 0:
         cropped_img = segmented_img[y1:y2, x1:x2]
         resized_img = cv2.resize(cropped_img, output_size)
-        # 下一步就是描述，得到描述的list
+        # 下一步就是描述，根据resized_img得到描述的list
         captions.append((caption))
         caption = caption+100
-
-
 
 # 3. 将图片转换为张量并添加批量维度
 image_tensor = torch.tensor(image).float()  # 将图像转换为 float 张量
 image_tensor = image_tensor.permute(2, 0, 1).unsqueeze(0)  # 调整形状为 (N, C, H, W)
+
 lr_up_seg = [{'image': (img)} for img in image_tensor]
 
 # print(image_tensor.shape)  # 输出: torch.Size([1, 3, H, W])

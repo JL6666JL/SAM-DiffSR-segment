@@ -3,3 +3,5 @@ weights/*
 preset/*
 __pycache__/*
 segment-anything/weights/
+cache/*
+output_img/*

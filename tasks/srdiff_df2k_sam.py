@@ -115,8 +115,11 @@ class Df2kDataSet_sam(SRDataSet):
             sam_mask = sam_mask[i:i + self.patch_size, j:j + self.patch_size]
             img_lr = img_lr[i_lr:i_lr + self.patch_size_lr, j_lr:j_lr + self.patch_size_lr]
         
+        img_lr_up_255 = imresize(img_lr, hparams['sr_scale'])
         img_lr_up = imresize(img_lr / 256, hparams['sr_scale'])  # np.float [H, W, C]
+
         img_hr, img_lr, img_lr_up = [self.to_tensor_norm(x).float() for x in [img_hr, img_lr, img_lr_up]]
+
         
         if hparams['sam_data_config']['all_same_mask_to_zero']:
             if len(np.unique(sam_mask)) == 1:
@@ -134,7 +137,7 @@ class Df2kDataSet_sam(SRDataSet):
         
         return {
                 'img_hr': img_hr, 'img_lr': img_lr,
-                'img_lr_up': img_lr_up, 'item_name': item['item_name'],
+                'img_lr_up': img_lr_up, 'img_lr_up_255':img_lr_up_255,'item_name': item['item_name'],
                 'loc': np.array(item['loc']), 'loc_bdr': np.array(item['loc_bdr']),
                 'sam_mask': sam_mask
         }
@@ -205,7 +208,8 @@ class SRDiffDf2k_sam(SRDiffTrainer):
         img_hr = batch['img_hr']
         img_lr = batch['img_lr']
         img_lr_up = batch['img_lr_up']
+        img_lr_up_255 = batch['img_lr_up_255']
         sam_mask = batch['sam_mask']
-        losses, _, _ = self.model(img_hr, img_lr, img_lr_up, sam_mask=sam_mask)
+        losses, _, _ = self.model(img_hr, img_lr, img_lr_up, img_lr_up_255,sam_mask=sam_mask)
         total_loss = sum(losses.values())
         return losses, total_loss

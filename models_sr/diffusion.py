@@ -145,7 +145,7 @@ class GaussianDiffusion(nn.Module):
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t=x, t=t)
         return model_mean, posterior_variance, posterior_log_variance, x_recon
     
-    def forward(self, img_hr, img_lr, img_lr_up, t=None, *args, **kwargs):
+    def forward(self, img_hr, img_lr, img_lr_up, img_lr_up_255,t=None, *args, **kwargs):
         x = img_hr
         b, *_, device = *x.shape, x.device
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long() \
@@ -161,7 +161,7 @@ class GaussianDiffusion(nn.Module):
             rrdb_out = img_lr_up
             cond = img_lr
         x = self.img2res(x, img_lr_up)  # x是hr或者x是获得hr和上采样后lr之间的残差
-        p_losses, x_tp1, noise_pred, x_t, x_t_gt, x_0 = self.p_losses(x, t, cond, img_lr_up, *args, **kwargs)
+        p_losses, x_tp1, noise_pred, x_t, x_t_gt, x_0 = self.p_losses(x, t, cond, img_lr_up, img_lr_up_255,*args, **kwargs)
         ret = {'q': p_losses}
         if not hparams['fix_rrdb']:
             if hparams['aux_l1_loss']:
