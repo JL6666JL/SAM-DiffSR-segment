@@ -56,7 +56,6 @@ def init_semantic_seg():
     semantic_seg_model = Trainer.build_model(cfg_seg)
     DetectionCheckpointer(semantic_seg_model).load(cfg_seg.MODEL.WEIGHTS)
     # semantic_seg_model.eval().to('cuda:0')
-    
     semantic_seg_model.eval().cuda()
     return semantic_seg_model
 
@@ -106,8 +105,8 @@ def init_labels_embedding():
     return labels_embedding_list
 
 semantic_seg_model = init_semantic_seg()
-# instance_seg_model = init_instance_seg()
-# caption_processor, caption_model = init_caption_model()
+instance_seg_model = init_instance_seg()
+caption_processor, caption_model = init_caption_model()
 tokenizer, text_encoder = init_SD_model()
 labels_embedding_list = init_labels_embedding()
 
@@ -135,10 +134,9 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         self.caption_mlp2 = nn.Linear(in_features=hidden_dim, out_features=1)
         self.caption_ac2 = nn.ReLU()
 
-    def p_losses(self, x_start, t, cond, img_lr_up, img_lr_up_255,caption_num, patch_caption, 
-                 patch_instance_mask,noise=None, sam_mask=None):
+    def p_losses(self, x_start, t, cond, img_lr_up, img_lr_up_255,noise=None, sam_mask=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
-        caption_mask = self.get_caption_mask(img_lr_up_255, caption_num, patch_caption, patch_instance_mask)
+        caption_mask = self.get_caption_mask(img_lr_up_255)
         _caption_mask = caption_mask.unsqueeze(1)
 
         if self.sam_config['p_losses_sam']:
@@ -220,8 +218,7 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         else:
             return img, rrdb_out
 
-    def get_caption_mask(self,img_lr_up_255,caption_num, patch_caption, patch_instance_mask):
-
+    def get_caption_mask(self,img_lr_up_255):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         N,H,W,C = img_lr_up_255.shape
         merge_mask = torch.zeros((N,H,W)).cuda()
@@ -233,73 +230,54 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         labels = semantic_seg_model(semantic_img)
         labels = torch.cat([label['sem_seg'].argmax(dim=0).unsqueeze(0) for label in labels], dim=0)
 
+
         # 实例分割部分获得精确描述
         instance_img = img_lr_up_255.cpu().numpy()
         instance_img = instance_img.astype(np.uint8)
-        # print(patch_caption.shape)
-        # if patch_caption.shape[0] == 30 :
-        #     input('debug')
-
-        for i, num in enumerate(caption_num):
+        for i,img in enumerate(instance_img):
+            instance_output = instance_seg_model(img)
+            instance_mask = instance_output["instances"].pred_masks.cpu()
+            instance_box = instance_output["instances"].pred_boxes.tensor.cpu().numpy()
             caption_list = []
-            #有实例分割的结果
-            if num != 0:
-                for m in range(num):
-                    caption_embednum = self.get_caption_num(patch_caption[i][m])
-                    caption_list.append(caption_embednum)
-                
+            instance_size=(160,160) #裁剪之后img_lr_up的大小为(160,160)
+            # 如果有实例分割的结果
+            if instance_mask.shape[0] != 0:
+                for i, mask in enumerate(instance_mask):
+                    segmented_img = np.zeros_like(img, dtype=np.uint8)
+                    segmented_img[mask] = img[mask]
+
+                    x1, y1, x2, y2 = instance_box[i].astype(int)
+                    if x1 < x2 and y1 < y2 and (x2 - x1) > 0 and (y2 - y1) > 0:
+                        cropped_img = segmented_img[y1:y2, x1:x2]
+                        resized_img = cv2.resize(cropped_img, instance_size)
+
+                        inputs = caption_processor(resized_img, return_tensors="pt").to(device, torch.float16)
+                        generated_ids = caption_model.generate(**inputs, max_new_tokens=20)
+                        generated_text = caption_processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+                        generated_text = generated_text.lower().replace('.', ',').rstrip(',')
+                        class_token = tokenizer(generated_text,return_tensors="pt")
+
+                        _, tokens_len = class_token.input_ids.shape
+                        if tokens_len >= self.num_query_token:
+                            final_tokens = class_token.input_ids[:,(tokens_len-self.num_query_token):tokens_len]
+                        else:
+                            last_token = class_token.input_ids[:,-1].unsqueeze(1)
+                            final_tokens = torch.cat([class_token.input_ids,last_token.expand(1,self.num_query_token-tokens_len)],dim=1)
+                        caption_embedding = text_encoder(final_tokens.cuda())
+                        # 展成一个一维张量
+                        caption_embedding = caption_embedding[0].squeeze(0).view(-1)    #获取到caption的clip embedding
+
+                        caption_num = self.get_caption_num(caption_embedding)
+                        caption_list.append(caption_num)
+            
             # 把labels的编码的num写入mask
             for j in torch.unique(labels[i]):
                 merge_mask[i][labels[i]==j] = self.get_labels_num(labels_embedding_list[j])
-            for j in range(num):
-                merge_mask[i][patch_instance_mask[i][j]] = caption_list[j]
 
-        return merge_mask
-
-        # for i,img in enumerate(instance_img):
-        #     instance_output = instance_seg_model(img)
-        #     instance_mask = instance_output["instances"].pred_masks.cpu()
-        #     instance_box = instance_output["instances"].pred_boxes.tensor.cpu().numpy()
-        #     caption_list = []
-        #     instance_size=(160,160) #裁剪之后img_lr_up的大小为(160,160)
-        #     # 如果有实例分割的结果
-        #     if instance_mask.shape[0] != 0:
-        #         for m, mask in enumerate(instance_mask):
-        #             segmented_img = np.zeros_like(img, dtype=np.uint8)
-        #             segmented_img[mask] = img[mask]
-
-        #             x1, y1, x2, y2 = instance_box[m].astype(int)
-        #             if x1 < x2 and y1 < y2 and (x2 - x1) > 0 and (y2 - y1) > 0:
-        #                 cropped_img = segmented_img[y1:y2, x1:x2]
-        #                 resized_img = cv2.resize(cropped_img, instance_size)
-
-        #                 inputs = caption_processor(resized_img, return_tensors="pt").to(device, torch.float16)
-        #                 generated_ids = caption_model.generate(**inputs, max_new_tokens=20)
-        #                 generated_text = caption_processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-        #                 generated_text = generated_text.lower().replace('.', ',').rstrip(',')
-        #                 class_token = tokenizer(generated_text,return_tensors="pt")
-
-        #                 _, tokens_len = class_token.input_ids.shape
-        #                 if tokens_len >= self.num_query_token:
-        #                     final_tokens = class_token.input_ids[:,(tokens_len-self.num_query_token):tokens_len]
-        #                 else:
-        #                     last_token = class_token.input_ids[:,-1].unsqueeze(1)
-        #                     final_tokens = torch.cat([class_token.input_ids,last_token.expand(1,self.num_query_token-tokens_len)],dim=1)
-        #                 caption_embedding = text_encoder(final_tokens.cuda())
-        #                 # 展成一个一维张量
-        #                 caption_embedding = caption_embedding[0].squeeze(0).view(-1)    #获取到caption的clip embedding
-
-        #                 caption_embednum = self.get_caption_num(caption_embedding)
-        #                 caption_list.append(caption_embednum)
-            
-        #     # 把labels的编码的num写入mask
-        #     for j in torch.unique(labels[i]):
-        #         merge_mask[i][labels[i]==j] = self.get_labels_num(labels_embedding_list[j])
-
-        #     for j in range(len(caption_list)):
-        #         merge_mask[i][instance_mask[j]] = caption_list[j]
+            for j in range(len(caption_list)):
+                merge_mask[i][instance_mask[j]] = caption_list[j]
         
-        # return merge_mask
+        return merge_mask
 
     def get_labels_num(self,labels_embedding):
         emb = self.labels_mlp1(labels_embedding)

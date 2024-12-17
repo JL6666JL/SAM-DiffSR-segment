@@ -6,6 +6,10 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
+import multiprocessing
+
+import torch.nn as nn
+
 parent_path = Path(__file__).absolute().parent.parent
 sys.path.append(os.path.abspath(parent_path))
 os.chdir(parent_path)
@@ -76,14 +80,21 @@ class Trainer:
     
     def train(self):
         model = self.build_model()
+        # if torch.cuda.device_count() > 1:
+        #     print("Using 2 GPUs for training")
+        #     model = nn.DataParallel(model, device_ids=[0, 1])  # 指定使用 GPU 0 和 GPU 
+        # model.cuda()
         optimizer = self.build_optimizer(model)
         self.global_step = training_step = load_checkpoint(model, optimizer, hparams['work_dir'], steps=self.val_steps)
         self.scheduler = scheduler = self.build_scheduler(optimizer)
         scheduler.step(training_step)
         dataloader = self.build_train_dataloader()
         
-        train_pbar = tqdm(dataloader, initial=training_step, total=float('inf'),
+        # train_pbar = tqdm(dataloader, initial=training_step, total=float('inf'),
+        #                   dynamic_ncols=True, unit='step')
+        train_pbar = tqdm(dataloader, initial=training_step, total=hparams['max_updates'],
                           dynamic_ncols=True, unit='step')
+        
         while self.global_step < hparams['max_updates']:
             for batch in train_pbar:
                 if training_step % hparams['val_check_interval'] == 0:
@@ -104,6 +115,8 @@ class Trainer:
                 if training_step % 100 == 0:
                     self.log_metrics({f'tr/{k}': v for k, v in losses.items()}, training_step)
                 train_pbar.set_postfix(**tensors_to_scalars(losses))
+                print(f"total step:{hparams['max_updates']}, now step:{training_step}")
+                # print(f"now step:{training_step}")
     
     def validate(self, training_step):
         val_dataloader = self.build_val_dataloader()
@@ -331,7 +344,6 @@ class Trainer:
 
 if __name__ == '__main__':
     set_hparams()
-    
     pkg = ".".join(hparams["trainer_cls"].split(".")[:-1])
     cls_name = hparams["trainer_cls"].split(".")[-1]
     trainer = getattr(importlib.import_module(pkg), cls_name)()
