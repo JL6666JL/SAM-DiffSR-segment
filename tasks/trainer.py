@@ -9,6 +9,7 @@ from pathlib import Path
 import multiprocessing
 
 import torch.nn as nn
+import imagehash
 
 parent_path = Path(__file__).absolute().parent.parent
 sys.path.append(os.path.abspath(parent_path))
@@ -227,6 +228,9 @@ class Trainer:
                                 hr_g = Image.fromarray(hr_g)
                                 hr_p.save(f"{gen_dir}/SR/{item_name}.png")
                                 hr_g.save(f"{gen_dir}/HR/{item_name}.png")
+                                # print(item_name)
+                                # print(hr_p.size)
+                                # input('de')
             
             exp_name = hparams['work_dir'].split('/')[-1]
             sr_img_dir = f"{gen_dir}/SR/"
@@ -244,7 +248,7 @@ class Trainer:
     
     def benchmark_loop(self, benchmark_name_list, metric_list, gt_path):
         # infer and evaluation all save checkpoint
-        
+    
         model = self.build_model()
         
         def get_checkpoint(model, checkpoint):
@@ -263,8 +267,8 @@ class Trainer:
             torch.cuda.empty_cache()
             
             return training_step
-        
         ckpt_paths = get_all_ckpts(hparams['work_dir'])
+
         for ckpt_path in ckpt_paths:
             checkpoint = torch.load(ckpt_path, map_location='cpu')
             training_step = get_checkpoint(model, checkpoint)
@@ -272,6 +276,7 @@ class Trainer:
             self.global_step = training_step
             
             for data_name in benchmark_name_list:
+
                 test_dataloader = self.build_test_my_dataloader(data_name)
                 
                 self.results = {k: 0 for k in self.metric_keys + self.metric_2_keys}
@@ -280,6 +285,7 @@ class Trainer:
                 
                 os.makedirs(f'{self.gen_dir}/outputs', exist_ok=True)
                 os.makedirs(f'{self.gen_dir}/SR', exist_ok=True)
+                os.makedirs(f'{self.gen_dir}/HR', exist_ok=True)
                 
                 self.model.sample_tqdm = False
                 torch.backends.cudnn.benchmark = False
@@ -291,6 +297,9 @@ class Trainer:
                         move_to_cuda(batch)
                         gen_dir = self.gen_dir
                         item_names = batch['item_name']
+
+                        img_hr = batch['img_hr']
+                        img_hr = self.tensor2img(img_hr)
                         
                         res = self.sample_and_test(batch)
                         if len(res) == 3:
@@ -301,14 +310,22 @@ class Trainer:
                         
                         img_sr = self.tensor2img(img_sr)
                         
-                        for item_name, hr_p in zip(item_names, img_sr):
+                        for item_name, hr_p, hr_g in zip(item_names, img_sr,img_hr):
                             item_name = os.path.splitext(item_name)[0]
                             hr_p = Image.fromarray(hr_p)
+                            hr_g = Image.fromarray(hr_g)
                             hr_p.save(f"{gen_dir}/SR/{item_name}.png")
+                            hr_g.save(f"{gen_dir}/HR/{item_name}.png")
+                            
+                            # print(item_name+"_loop")
+                            # print(f"{gen_dir}/SR/{item_name}.png")
+                            # print(hr_p.size)
+                            # input('debug')
                 
                 exp_name = hparams['work_dir'].split('/')[-1]
                 sr_img_dir = f"{gen_dir}/SR/"
-                gt_img_dir = f"{gt_path}/{data_name}/HR"
+                # gt_img_dir = f"{gt_path}/{data_name.removeprefix('test_')}/HR"
+                gt_img_dir = f"{gen_dir}/HR/"
                 excel_path = f"{hparams['work_dir']}/IQA-val-benchmark_loop-{exp_name}.xlsx"
                 epoch = training_step
                 eval_img_IQA(gt_img_dir, sr_img_dir, excel_path, metric_list, epoch, data_name)

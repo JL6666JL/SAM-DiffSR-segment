@@ -145,7 +145,12 @@ class GaussianDiffusion(nn.Module):
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t=x, t=t)
         return model_mean, posterior_variance, posterior_log_variance, x_recon
     
-    def forward(self, img_hr, img_lr, img_lr_up, img_lr_up_255, caption_num, patch_caption, patch_instance_mask,t=None, *args, **kwargs):
+    def forward(self, img_hr, img_lr, img_lr_up, img_lr_up_255, caption_num, patch_caption, 
+                patch_instance_mask,  t=None, *args, **kwargs):
+        # # 处理多余的维度
+        # for cur in range(len(labels_embedding_list)):
+        #     labels_embedding_list[cur] = labels_embedding_list[cur][0]
+        
         x = img_hr
         b, *_, device = *x.shape, x.device
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long() \

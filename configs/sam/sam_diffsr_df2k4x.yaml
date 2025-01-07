@@ -9,7 +9,9 @@ decay_steps: 200000
 
 # train and test
 batch_size: 64
+# batch_size: 128
 max_updates: 400000
+# max_updates: 200000
 
 rrdb_num_feat: 64
 

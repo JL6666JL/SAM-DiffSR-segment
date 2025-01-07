@@ -14,6 +14,7 @@ if __name__ == '__main__':
     train_sam_embed_dir = '/data1/jianglei/DF2K/sam_embed/DF2K/DF2K_train_HR'
     
     binary_data_dir = hparams['binary_data_dir']
+    input(binary_data_dir)
     os.makedirs(binary_data_dir, exist_ok=True)
     
     train_img_list = sorted(os.path.join(train_img_dir, filename) for filename in os.listdir(train_img_dir))

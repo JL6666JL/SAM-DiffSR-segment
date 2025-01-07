@@ -6,14 +6,15 @@ from data_gen.utils import build_bin_dataset
 from utils_sr.hparams import hparams, set_hparams
 
 if __name__ == '__main__':
-    data_name = 'Set14'     # Set5 Set14 Urban100 Manga109 BSDS100
-    data_path = 'data/benchmark/Set14/HR'
+    data_name = 'Urban100'     # Set5 Set14 Urban100 Manga109 BSDS100
+    data_path = '/data1/jianglei/SAM_testdata/data/Urban100/HR'
     
     set_hparams()
     binary_data_dir = hparams['binary_data_dir']
     os.makedirs(binary_data_dir, exist_ok=True)
     
-    test_img_list = sorted(os.listdir(data_path))
+    # test_img_list = sorted(os.listdir(data_path))
+    test_img_list = sorted(os.path.join(data_path,filename) for filename in os.listdir(data_path))
     
     crop_size = hparams['crop_size']
     patch_size = hparams['patch_size']

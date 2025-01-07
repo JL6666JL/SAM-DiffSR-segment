@@ -24,7 +24,7 @@ from PIL import Image
 from torchvision import transforms
 import numpy as np
 from transformers import AutoProcessor, Blip2ForConditionalGeneration,AutoTokenizer,PretrainedConfig
-from utils.seg_class import ADE20K_150_CATEGORIES
+from utils11.seg_class import ADE20K_150_CATEGORIES
 import torch.nn as nn
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
@@ -101,6 +101,7 @@ def init_labels_embedding():
         class_token = tokenizer(name, return_tensors="pt")
         class_token.input_ids = class_token.input_ids[0][1].unsqueeze(0) # only take the first token
         now_embedding = text_encoder(class_token.input_ids.cuda())[0].squeeze(0).view(-1)
+        now_embedding.cuda().detach()
         labels_embedding_list.append(now_embedding)
 
     return labels_embedding_list
@@ -122,9 +123,10 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         self.sam_config = sam_config
         
         self.num_query_token = 30
+
         labels_embedding_dim = 1024
         caption_embedding_dim = 30720
-        hidden_dim = 100
+        hidden_dim = 100    
         self.labels_mlp1 = nn.Linear(in_features=labels_embedding_dim ,out_features=hidden_dim)
         self.labels_ac1 = nn.ReLU()
         self.labels_mlp2 = nn.Linear(in_features=hidden_dim ,out_features=1)
@@ -136,7 +138,7 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         self.caption_ac2 = nn.ReLU()
 
     def p_losses(self, x_start, t, cond, img_lr_up, img_lr_up_255,caption_num, patch_caption, 
-                 patch_instance_mask,noise=None, sam_mask=None):
+                 patch_instance_mask ,noise=None, sam_mask=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
         caption_mask = self.get_caption_mask(img_lr_up_255, caption_num, patch_caption, patch_instance_mask)
         _caption_mask = caption_mask.unsqueeze(1)
@@ -236,10 +238,8 @@ class GaussianDiffusion_sam(GaussianDiffusion):
         # 实例分割部分获得精确描述
         instance_img = img_lr_up_255.cpu().numpy()
         instance_img = instance_img.astype(np.uint8)
-        # print(patch_caption.shape)
-        # if patch_caption.shape[0] == 30 :
-        #     input('debug')
 
+        # caption_num是一个长度为B的tensor，其中存储着每张图片的caption数量
         for i, num in enumerate(caption_num):
             caption_list = []
             #有实例分割的结果
@@ -250,7 +250,11 @@ class GaussianDiffusion_sam(GaussianDiffusion):
                 
             # 把labels的编码的num写入mask
             for j in torch.unique(labels[i]):
-                merge_mask[i][labels[i]==j] = self.get_labels_num(labels_embedding_list[j])
+                local_rank = torch.cuda.current_device()
+                device = torch.device(f"cuda:{local_rank}")
+                label_emb = labels_embedding_list[j].clone().to(device)
+                merge_mask[i][labels[i]==j] = self.get_labels_num(label_emb)
+            # 把captions的编码写入mask
             for j in range(num):
                 merge_mask[i][patch_instance_mask[i][j]] = caption_list[j]
 

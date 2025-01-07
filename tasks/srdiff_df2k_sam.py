@@ -18,6 +18,8 @@ from utils_sr.matlab_resize import imresize
 from utils_sr.utils import load_ckpt
 
 from torch import nn
+from transformers import AutoProcessor, Blip2ForConditionalGeneration,AutoTokenizer,PretrainedConfig
+from utils11.seg_class import ADE20K_150_CATEGORIES
 
 
 def normalize_01(data):
@@ -295,6 +297,61 @@ class SRDiffDf2k_sam(SRDiffTrainer):
         caption_num = batch['caption_num']
         patch_caption = batch['patch_caption']
         patch_instance_mask = batch['patch_instance_mask']
-        losses, _, _ = self.model(img_hr, img_lr, img_lr_up, img_lr_up_255, caption_num, patch_caption, patch_instance_mask,sam_mask=sam_mask)
+        # labels_embedding_list = init_labels_embedding()
+        losses, _, _ = self.model(img_hr, img_lr, img_lr_up, img_lr_up_255, caption_num, 
+                                  patch_caption, patch_instance_mask, sam_mask=sam_mask)
         total_loss = sum(losses.values())
         return losses, total_loss
+    
+def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
+    text_encoder_config = PretrainedConfig.from_pretrained(
+        pretrained_model_name_or_path,
+        subfolder="text_encoder",
+        revision=revision,
+    )
+    model_class = text_encoder_config.architectures[0]
+
+    if model_class == "CLIPTextModel":
+        from transformers import CLIPTextModel
+
+        return CLIPTextModel
+    elif model_class == "RobertaSeriesModelWithTransformation":
+        from diffusers.pipelines.alt_diffusion.modeling_roberta_series import RobertaSeriesModelWithTransformation
+
+        return RobertaSeriesModelWithTransformation
+    else:
+        raise ValueError(f"{model_class} is not supported.")
+
+def init_labels_embedding():
+    pretrained_model_name_or_path = "preset/models/stable-diffusion-2-1-base"
+    revision = None
+    tokenizer = AutoTokenizer.from_pretrained(
+        pretrained_model_name_or_path,
+        subfolder="tokenizer",
+        revision=revision,
+        use_fast=False,
+    )
+    text_encoder_cls = import_model_class_from_model_name_or_path(pretrained_model_name_or_path, revision)
+    text_encoder = text_encoder_cls.from_pretrained(
+        pretrained_model_name_or_path, subfolder="text_encoder", revision=revision
+    )
+    text_encoder.requires_grad_(False)
+    text_encoder.cuda()
+    ADE20k_NAMES = [k["name"] for k in ADE20K_150_CATEGORIES]
+    for i, name in enumerate(ADE20k_NAMES):
+        ADE20k_NAMES[i] = name.split(",")[0]
+    labels_embedding_list = []
+    for i, name in enumerate(ADE20k_NAMES):
+        class_token = tokenizer(name, return_tensors="pt")
+        class_token.input_ids = class_token.input_ids[0][1].unsqueeze(0) # only take the first token
+        now_embedding = text_encoder(class_token.input_ids.cuda())[0].squeeze(0).view(-1)
+        now_embedding_clone = now_embedding.clone()
+        now_embedding_combined = torch.stack((now_embedding,now_embedding_clone),dim=0)
+        now_embedding_combined.requires_grad = False
+        now_embedding_combined.detach()
+        # now_embedding.cuda()
+        now_embedding_combined.cuda()
+        # labels_embedding_list.append(now_embedding)
+        labels_embedding_list.append(now_embedding_combined)
+
+    return labels_embedding_list

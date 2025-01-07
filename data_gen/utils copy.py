@@ -27,9 +27,6 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 import torch
 from transformers import AutoProcessor, Blip2ForConditionalGeneration,AutoTokenizer,PretrainedConfig
-from Mask2Former.mask2former import add_maskformer2_config
-from Mask2Former.train_net import Trainer
-from utils11.seg_class import ADE20K_150_CATEGORIES
 
 os.environ['TRANSFORMERS_CACHE'] = '/home/jianglei/work/SAM-DiffSR/cache'
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
@@ -83,40 +80,9 @@ def init_SD_model():
     text_encoder.cuda()
     return tokenizer, text_encoder
 
-def init_semantic_seg():
-    cfg_seg = get_cfg()
-    add_deeplab_config(cfg_seg)
-    add_maskformer2_config(cfg_seg)
-    cfg_seg.merge_from_file("./preset/models/mask2former/config/ade20k-maskformer2_swin_large_IN21k_384_bs16_160k_res640.yaml")
-    cfg_seg.MODEL.WEIGHTS = "./preset/models/mask2former/model_final_6b4a3a.pkl"
-    cfg_seg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON = True
-    semantic_seg_model = Trainer.build_model(cfg_seg)
-    DetectionCheckpointer(semantic_seg_model).load(cfg_seg.MODEL.WEIGHTS)
-    # semantic_seg_model.eval().to('cuda:0')
-    
-    semantic_seg_model.eval().cuda()
-    return semantic_seg_model
-
-def init_labels_embedding():
-    ADE20k_NAMES = [k["name"] for k in ADE20K_150_CATEGORIES]
-    for i, name in enumerate(ADE20k_NAMES):
-        ADE20k_NAMES[i] = name.split(",")[0]
-    labels_embedding_list = []
-    for i, name in enumerate(ADE20k_NAMES):
-        class_token = tokenizer(name, return_tensors="pt")
-        class_token.input_ids = class_token.input_ids[0][1].unsqueeze(0) # only take the first token
-        now_embedding = text_encoder(class_token.input_ids.cuda())[0].squeeze(0).view(-1)
-        now_embedding.cuda().detach()
-        labels_embedding_list.append(now_embedding)
-
-    return labels_embedding_list
-
 instance_seg_model = init_instance_seg()
 caption_processor, caption_model = init_caption_model()
 tokenizer, text_encoder = init_SD_model()
-
-semantic_seg_model = init_semantic_seg()
-labels_embedding_list = init_labels_embedding()
 
 def worker(args):
     i, path, patch_size, crop_size, thresh_size, sr_scale = args
@@ -203,7 +169,6 @@ def worker_sam(args):
 
             patch_caption = []
             patch_instance_mask = []
-            patch_label = []
             device = "cuda" if torch.cuda.is_available() else "cpu"
             num_query_token = 30
             # print(f'h:{h},w:{w}')
@@ -253,12 +218,6 @@ def worker_sam(args):
                 
                 patch_caption.append(now_caption)  
                 patch_instance_mask.append(instance_mask.cpu()) 
-
-                semantic_img = torch.from_numpy(now_img).permute(2,0,1).contiguous()
-                semantic_img = [{'image' : (semantic_img)}]
-                labels = semantic_seg_model(semantic_img)
-                labels = torch.cat([label['sem_seg'].argmax(dim=0).unsqueeze(0) for label in labels], dim=0).squeeze(0)
-
 
             ret.append({  
                     'item_name': img_name,

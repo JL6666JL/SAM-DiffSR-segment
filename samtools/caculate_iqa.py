@@ -3,6 +3,8 @@ import ssl
 from os.path import join
 from pathlib import Path
 from statistics import mean
+from PIL import Image
+import imagehash
 
 parent_path = Path(__file__).absolute().parent.parent
 parent_path = os.path.abspath(parent_path)
@@ -69,9 +71,21 @@ def eval_img_IQA(gt_dir, sr_dir, excel_path, metric_list, exp_name, data_name):
                 
                 gt_img = load_img(gt_img_path, target_size=None)
                 target_size = gt_img.shape[2:]
+                # benchmark和benchmark_loop的 target_size不一样，也就是gt不一样
                 sr_img = load_img(sr_img_path, target_size=target_size)
-                
+                # print(target_size)
+                # print(sr_img_path)
+                # print(sr_img.shape)
                 score_fr = iqa_metric(sr_img, gt_img)
+
+                sr_rgb = sr_img[0].permute(1,2,0)
+                sr_rgb = Image.fromarray((sr_rgb.numpy() * 255).astype('uint8')) 
+                hash_value = imagehash.average_hash(sr_rgb)
+                sr_rgb.save(f"/home/jianglei/work/SAM-DiffSR/test/loop_{sr_img_name}")
+                # print(score_fr)
+                # print(hash_value)
+                # input('de')
+
                 
                 if score_fr.shape == (1,):
                     score_fr = score_fr[0]
@@ -79,9 +93,15 @@ def eval_img_IQA(gt_dir, sr_dir, excel_path, metric_list, exp_name, data_name):
                         score_fr = float(score_fr.cpu().numpy())
                 else:
                     score_fr = float(score_fr)
+                
+
                 score_fr_list.append(score_fr)
             
             mean_score = mean(score_fr_list)
+
+            # print(metric)
+            # print(mean_score)
+            # input('de')
             iqa_result[metric] = float(mean_score)
             print(f'{metric}: {mean_score}')
     

@@ -1,4 +1,5 @@
-binary_data_dir: /data1/jianglei/SAM-DiffSR/train/df2k4x_sam_caption
+binary_data_dir: /data1/jianglei/SAM-DiffSR/train/df2k4x_sam
+# binary_data_dir: /data1/jianglei/SAM-DiffSR/train/df2k4x_sam_caption
 patch_size: 160
 crop_size: 320
 thresh_size: 160
